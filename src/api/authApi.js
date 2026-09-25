@@ -1,8 +1,16 @@
 import { apiClient, USE_MOCK, mockDelay } from "./client";
 import { getMockDB, saveMockDB } from "./mockData";
 
+/** Persist the auth token + user so the axios interceptor and AuthContext see them. */
+function persistAuth(data) {
+  if (data?.token) localStorage.setItem("medigo_token", data.token);
+  if (data?.user) localStorage.setItem("medigo_user", JSON.stringify(data.user));
+  return data;
+}
+
 export const authApi = {
-  async login(email, password, roleHint = "user") {
+  async login(credentials = {}) {
+    const { email, password, roleHint = "user" } = credentials;
     if (USE_MOCK) {
       await mockDelay(300);
       const db = getMockDB();
@@ -21,10 +29,10 @@ export const authApi = {
       };
 
       const token = `mock-jwt-token-${user.id}-${Date.now()}`;
-      return { success: true, user, token, message: "Login successful" };
+      return persistAuth({ success: true, user, token, message: "Login successful" });
     }
     const response = await apiClient.post("/auth/login", { email, password });
-    return response.data;
+    return persistAuth(response.data);
   },
 
   async register(formData) {
@@ -78,10 +86,23 @@ export const authApi = {
       db.users.push(newUser);
       saveMockDB("users", db.users);
       const token = `mock-jwt-token-${newUser.id}-${Date.now()}`;
-      return { success: true, user: newUser, token, message: "Account created successfully" };
+      return persistAuth({ success: true, user: newUser, token, message: "Account created successfully" });
     }
     const response = await apiClient.post("/auth/register", formData);
-    return response.data;
+    return persistAuth(response.data);
+  },
+
+  async logout() {
+    if (!USE_MOCK) {
+      try {
+        await apiClient.post("/auth/logout");
+      } catch (_e) {
+        // Stateless JWT — a failed logout call is non-fatal; we still clear locally.
+      }
+    }
+    localStorage.removeItem("medigo_token");
+    localStorage.removeItem("medigo_user");
+    return { success: true };
   },
 
   async getCurrentUser() {
@@ -90,7 +111,7 @@ export const authApi = {
       return stored ? JSON.parse(stored) : null;
     }
     const response = await apiClient.get("/auth/me");
-    return response.data;
+    return response.data.user;
   },
 
   async updateProfile(userId, profileData) {
@@ -107,6 +128,9 @@ export const authApi = {
       return profileData;
     }
     const response = await apiClient.put("/auth/profile", profileData);
-    return response.data;
+    if (response.data?.user) {
+      localStorage.setItem("medigo_user", JSON.stringify(response.data.user));
+    }
+    return response.data.user;
   }
 };

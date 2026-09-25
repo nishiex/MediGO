@@ -169,5 +169,48 @@ export const pharmacyApi = {
     }
     const response = await apiClient.patch(`/pharmacy/reservations/${id}/status`, { status, notes });
     return response.data;
+  },
+
+  async getLowStockAlerts(pharmacyId = "pharm-1") {
+    if (USE_MOCK) {
+      await mockDelay(200);
+      const db = getMockDB();
+      const lowStockMedicines = db.medicines.filter(
+        (m) => m.pharmacyId === pharmacyId && (m.stockQuantity <= 5 || m.stockStatus === "Low Stock" || m.stockStatus === "Out of Stock")
+      );
+      return { lowStockMedicines };
+    }
+    const response = await apiClient.get("/pharmacy/low-stock");
+    return response.data;
+  },
+
+  async getMedicineById(id) {
+    if (USE_MOCK) {
+      await mockDelay(200);
+      const db = getMockDB();
+      const medicine = db.medicines.find((m) => m.id === id);
+      if (!medicine) throw new Error("Medicine not found");
+      return { medicine };
+    }
+    const response = await apiClient.get(`/pharmacy/medicines/${id}`);
+    return response.data;
+  },
+
+  async updateStock(id, newStock) {
+    if (USE_MOCK) {
+      await mockDelay(200);
+      const db = getMockDB();
+      const index = db.medicines.findIndex((m) => m.id === id);
+      if (index === -1) throw new Error("Medicine not found");
+      const stock = Number(newStock);
+      let stockStatus = "In Stock";
+      if (stock === 0) stockStatus = "Out of Stock";
+      else if (stock <= 5) stockStatus = "Low Stock";
+      db.medicines[index] = { ...db.medicines[index], stockQuantity: stock, stockStatus };
+      saveMockDB("medicines", db.medicines);
+      return { success: true, medicine: db.medicines[index] };
+    }
+    const response = await apiClient.patch(`/pharmacy/medicines/${id}/stock`, { stock: Number(newStock) });
+    return response.data;
   }
 };
